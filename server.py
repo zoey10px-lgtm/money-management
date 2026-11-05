@@ -45,7 +45,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self.send_json(200, {"ok": True, "ai_configured": bool(api_key() and os.getenv("APP_ACCESS_TOKEN"))})
+            self.send_json(200, {"ok": True, "ai_configured": bool(api_key() and os.getenv("APP_ACCESS_TOKEN")), "api_key_present": bool(api_key()), "access_token_present": bool(os.getenv("APP_ACCESS_TOKEN"))})
             return
         if self.path in ("/", "/index.html"):
             data = (ROOT / "index.html").read_bytes()
@@ -63,8 +63,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(404, {"error": "Not found"})
         key = api_key()
         token = os.getenv("APP_ACCESS_TOKEN")
-        if not key or not token:
-            return self.send_json(503, {"error": "서버 AI 설정이 아직 완료되지 않았어요."})
+        if not key:
+            return self.send_json(503, {"error": "Render에 OPENAI_API_KEY가 설정되지 않았어요. Environment의 환경변수 항목을 확인해 주세요.", "missing": "OPENAI_API_KEY"})
+        if not token:
+            return self.send_json(503, {"error": "Render에 APP_ACCESS_TOKEN이 설정되지 않았어요.", "missing": "APP_ACCESS_TOKEN"})
         provided = self.headers.get("X-App-Token", "")
         if not hmac.compare_digest(provided, token):
             return self.send_json(401, {"error": "접속 암호가 맞지 않아요."})
