@@ -10,6 +10,20 @@ ROOT = Path(__file__).resolve().parent
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 MAX_BODY = 18000
 
+def api_key():
+    value = os.getenv("OPENAI_API_KEY", "").strip()
+    if value:
+        return value
+    for path in ("/etc/secrets/apt_api", "/etc/secrets/openai_api_key"):
+        try:
+            value = Path(path).read_text(encoding="utf-8").strip()
+            if value:
+                return value
+        except OSError:
+            pass
+    return ""
+
+
 SYSTEM = """너는 따뜻하고 친근한 한국어 소비 일기 도우미야. 사용자의 일상과 소비 감정에 공감하면서 간결하게 대화해.
 사용자가 확실하게 말한 새로운 지출만 추출하고 이미 이전 메시지에서 기록한 지출은 중복 추출하지 마.
 추측한 금액은 기록하지 마. 지출의 날짜는 시스템에 제공된 today(KST) 기준으로 해석해.
@@ -31,7 +45,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self.send_json(200, {"ok": True, "ai_configured": bool(os.getenv("OPENAI_API_KEY") and os.getenv("APP_ACCESS_TOKEN"))})
+            self.send_json(200, {"ok": True, "ai_configured": bool(api_key() and os.getenv("APP_ACCESS_TOKEN"))})
             return
         if self.path in ("/", "/index.html"):
             data = (ROOT / "index.html").read_bytes()
@@ -47,7 +61,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path != "/api/chat":
             return self.send_json(404, {"error": "Not found"})
-        key = os.getenv("OPENAI_API_KEY")
+        key = api_key()
         token = os.getenv("APP_ACCESS_TOKEN")
         if not key or not token:
             return self.send_json(503, {"error": "서버 AI 설정이 아직 완료되지 않았어요."})
