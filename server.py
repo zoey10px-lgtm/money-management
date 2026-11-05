@@ -14,7 +14,7 @@ def api_key():
     value = os.getenv("OPENAI_API_KEY", "").strip()
     if value:
         return value
-    for path in ("/etc/secrets/apt_api", "/etc/secrets/openai_api_key"):
+    for path in ("/etc/secrets/OPENAI_API_KEY", "/etc/secrets/apt_api", "/etc/secrets/openai_api_key"):
         try:
             value = Path(path).read_text(encoding="utf-8").strip()
             if value:
