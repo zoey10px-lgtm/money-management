@@ -60,8 +60,8 @@
 </aside>
 <aside class="drawer" id="chatDrawer" aria-label="소비 일기 대화">
 <div class="drawerhead"><div class="detailhead"><div><div class="eyebrow">MY MONEY DIARY</div><h2 class="paneltitle">✦ 소비 일기</h2></div><button class="close" data-close aria-label="닫기">×</button></div><p class="headernote">오늘 무엇을 했고, 무엇을 샀는지 자유롭게 이야기해요.</p></div>
-<div class="chatbody" id="chatMessages"><div class="chatnote">🛠 AI API 연결 전 버전이에요. 지금은 일기를 저장하고 다시 읽을 수 있어요. 대화에서 금액을 자동으로 추출하는 기능은 추후 연동할 예정이에요. 지출은 ‘＋ 지출 추가’에서 기록해 주세요.</div></div>
-<div class="chatcomposer"><textarea class="chatinput" id="chatInput" maxlength="3000" placeholder="오늘은 택시를 탔는데 돈이 아까웠어..."></textarea><div class="chatfoot"><span>Ctrl + Enter로 보내기</span><button class="btn primary" id="chatSend">일기 남기기 ↗</button></div></div>
+<div style="padding:12px 20px;border-bottom:1px solid #e9edf2"><label class="field" style="gap:5px">앱 접속 암호 (이 브라우저 탭에서만 유지)<input id="appToken" type="password" autocomplete="off" placeholder="Render 환경변수 APP_ACCESS_TOKEN 값"></label></div><div class="chatbody" id="chatMessages"><div class="chatnote">🔒 AI 대화는 서버를 통해 처리돼요. 처음에는 Render에 설정한 앱 접속 암호를 입력해 주세요. AI가 찾아낸 지출은 확인한 뒤 직접 저장할 수 있어요.</div></div>
+<div id="suggestedExpenses" style="padding:0 18px;max-height:220px;overflow:auto"></div><div class="chatcomposer"><textarea class="chatinput" id="chatInput" maxlength="3000" placeholder="오늘은 택시를 탔는데 돈이 아까웠어..."></textarea><div class="chatfoot"><span>Ctrl + Enter로 보내기</span><button class="btn primary" id="chatSend">일기 남기기 ↗</button></div></div>
 </aside>
 <div class="toast" id="toast" role="status"></div>
 <script>
@@ -165,12 +165,52 @@ save();render();closeDrawer();toast(editId?"지출을 수정했어요.":"새 지
 function openBudget(){id("budgetMonth").value=monthKey(viewMonth);id("budgetAmount").value=state.budgets[monthKey(viewMonth)]===undefined?"":state.budgets[monthKey(viewMonth)];showDrawer("budgetDrawer")}
 id("budgetMonth").addEventListener("change",function(){var v=state.budgets[this.value];id("budgetAmount").value=v===undefined?"":v});
 id("budgetForm").addEventListener("submit",function(e){e.preventDefault();var n=Number(id("budgetAmount").value),m=id("budgetMonth").value;if(!m||!Number.isSafeInteger(n)||n<0){toast("올바른 예산을 입력해 주세요.");return}state.budgets[m]=n;save();render();closeDrawer();toast("월간 예산을 저장했어요.")});
+
+var lastSuggestions=[];
+id("appToken").value=sessionStorage.getItem("moa-app-token")||"";
+id("appToken").addEventListener("change",function(){sessionStorage.setItem("moa-app-token",this.value)});
 function renderChat(){
 var body=id("chatMessages");body.querySelectorAll(".bubble").forEach(function(x){x.remove()});
 state.chat.forEach(function(entry){var bubble=document.createElement("div");bubble.className="bubble "+(entry.role==="me"?"me":"bot");bubble.textContent=entry.text;body.appendChild(bubble)});
 body.scrollTop=body.scrollHeight;
 }
-function submitChat(){var text=id("chatInput").value.trim();if(!text)return;state.chat.push({role:"me",text:text,time:new Date().toISOString()});id("chatInput").value="";save();renderChat();toast("소비 일기가 저장됐어요. AI 대화는 추후 연결돼요.")}
+function renderSuggestions(){
+var box=id("suggestedExpenses");box.innerHTML="";
+if(!lastSuggestions.length)return;
+var heading=document.createElement("p");heading.style.cssText="font-size:13px;font-weight:800;margin:12px 0";heading.textContent="✦ 발견한 지출 — 확인 후 저장";box.appendChild(heading);
+lastSuggestions.forEach(function(e,i){
+var item=document.createElement("div");item.className="record";
+var name=document.createElement("div");name.className="recordTop";var a=document.createElement("span");a.textContent=e.name+" · "+e.category;var b=document.createElement("strong");b.textContent=won(e.amount);name.append(a,b);
+var sub=document.createElement("div");sub.className="recordSub";sub.textContent=e.date+" · "+(MOODS[e.mood]||e.mood)+" · "+(e.note||"");var actions=document.createElement("div");actions.className="recordActions";
+var saveBtn=document.createElement("button");saveBtn.className="btn primary";saveBtn.style.padding="7px 11px";saveBtn.textContent="기록 저장";
+saveBtn.addEventListener("click",function(){
+if(!/^\d{4}-\d{2}-\d{2}$/.test(e.date)||!Number.isSafeInteger(e.amount)||e.amount<=0){toast("잘못된 지출 데이터예요.");return}
+state.expenses.push({id:(window.crypto&&crypto.randomUUID)?crypto.randomUUID():String(Date.now())+Math.random(),date:e.date,amount:e.amount,name:e.name,category:e.category,mood:e.mood,note:e.note,created:new Date().toISOString()});
+lastSuggestions.splice(i,1);save();render();renderSuggestions();toast("가계부에 기록했어요.");
+});
+var skip=document.createElement("button");skip.className="textbtn danger";skip.textContent="제외";skip.addEventListener("click",function(){lastSuggestions.splice(i,1);renderSuggestions()});
+actions.append(saveBtn,skip);item.append(name,sub,actions);box.appendChild(item);
+});
+}
+async function submitChat(){
+var message=id("chatInput").value.trim();if(!message)return;
+var secret=id("appToken").value.trim();
+if(!secret){toast("먼저 앱 접속 암호를 입력해 주세요.");id("appToken").focus();return}
+sessionStorage.setItem("moa-app-token",secret);
+var previous=state.chat.slice(-11).map(function(e){return {role:e.role==="me"?"user":"assistant",text:e.text}});
+var messages=previous.concat([{role:"user",text:message}]);
+id("chatInput").value="";
+state.chat.push({role:"me",text:message,time:new Date().toISOString()});save();renderChat();
+id("chatSend").disabled=true;id("chatSend").textContent="답변 생성 중…";
+try{
+var resp=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json","X-App-Token":secret},body:JSON.stringify({today:dateKey(new Date()),messages:messages})});
+var data=await resp.json();
+if(!resp.ok)throw Error(data.error||"AI 응답을 불러오지 못했어요.");
+state.chat.push({role:"bot",text:String(data.reply||"잘 들었어!"),time:new Date().toISOString()});save();renderChat();
+lastSuggestions=Array.isArray(data.expenses)?data.expenses:[];renderSuggestions();
+}catch(e){toast(e.message||"대화 요청 실패");state.chat.push({role:"bot",text:"연결이 잘 안 됐어. 잠시 후 다시 시도해 줘.",time:new Date().toISOString()});save();renderChat()}
+finally{id("chatSend").disabled=false;id("chatSend").textContent="메시지 보내기 ↗"}
+}
 id("chatSend").addEventListener("click",submitChat);
 id("chatInput").addEventListener("keydown",function(e){if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();submitChat()}});
 id("overlay").addEventListener("click",closeDrawer);document.querySelectorAll("[data-close]").forEach(function(b){b.addEventListener("click",closeDrawer)});
